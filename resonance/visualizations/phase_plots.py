@@ -9,6 +9,30 @@ from plotly.subplots import make_subplots
 import numpy as np
 from typing import List, Optional, Tuple
 
+def create_oscillator_outputs_plot(states_history: List[List[float]], n_oscillators: int) -> go.Figure:
+    """Create a plot showing individual oscillator outputs over time."""
+    fig = go.Figure()
+    
+    # Extract states for each oscillator
+    for i in range(n_oscillators):
+        oscillator_states = [states[i] for states in states_history]
+        
+        fig.add_trace(go.Scatter(
+            y=oscillator_states,
+            mode='lines',
+            name=f'Oscillator {i+1}',
+            line=dict(width=2)
+        ))
+    
+    fig.update_layout(
+        xaxis_title="Time Step",
+        yaxis_title="State",
+        height=200,
+        margin=dict(l=0, r=0, t=40, b=0)
+    )
+    
+    return fig
+
 def create_3d_phase_plot(
     states_history: List[List[float]],
     osc_indices: Tuple[int, int, int],

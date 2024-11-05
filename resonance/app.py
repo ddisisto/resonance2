@@ -10,7 +10,7 @@ from resonance.visualizations import (
     create_training_progress_plot,
     create_prediction_comparison_plot,
     create_multi_phase_plot,
-    create_3d_phase_plot
+    create_oscillator_outputs_plot
 )
 
 # Configure the page to use wide mode
@@ -147,22 +147,12 @@ if st.session_state.training_results is not None:
         n_oscillators = st.session_state.training_results['n_oscillators']
         states_history = st.session_state.training_results['states_history']
         
+        # Show individual oscillator outputs
+        st.markdown("### Individual Oscillator Outputs")
+        fig = create_oscillator_outputs_plot(states_history, n_oscillators)
+        st.plotly_chart(fig, use_container_width=True)
+        
         # Show multi-oscillator phase space analysis
         st.markdown("### Multi-Oscillator Analysis")
         fig_multi = create_multi_phase_plot(states_history, n_oscillators)
         st.plotly_chart(fig_multi, use_container_width=True)
-
-        if n_oscillators >= 3:
-            st.markdown("### 3D Phase Space")
-            st.markdown("Visualizes three oscillators' states evolving together, revealing cycles and attractors.")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                osc1_3d = st.selectbox("First", range(n_oscillators), 0, format_func=lambda x: f"Osc {x+1}")
-            with col2:
-                osc2_3d = st.selectbox("Second", range(n_oscillators), 1, format_func=lambda x: f"Osc {x+1}")
-            with col3:
-                osc3_3d = st.selectbox("Third", range(n_oscillators), 2, format_func=lambda x: f"Osc {x+1}")
-            
-            # Show 3D phase space plot
-            fig_3d = create_3d_phase_plot(states_history, (osc1_3d, osc2_3d, osc3_3d))
-            st.plotly_chart(fig_3d, use_container_width=True)

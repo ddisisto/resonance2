@@ -19,7 +19,7 @@ from .training_plots import (
 )
 
 from .phase_plots import (
-    create_3d_phase_plot,
+    create_oscillator_outputs_plot,
     create_multi_phase_plot
 )
 
@@ -33,8 +33,7 @@ __all__ = [
     'create_training_progress_plot',
     'create_prediction_comparison_plot',
     
-    # Phase space plots
-    'create_2d_phase_plot',
-    'create_3d_phase_plot',
+    # Output plots
+    'create_oscillator_outputs_plot',
     'create_multi_phase_plot'
 ]
