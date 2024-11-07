@@ -1,5 +1,4 @@
-"""
-Neural network models for resonance-based pattern processing.
+"""Neural network models for resonance-based pattern processing.
 
 This module implements neural network architectures designed to process and generate
 patterns through resonance mechanisms.
@@ -22,6 +21,8 @@ class ResonanceNetwork(nn.Module):
         n_oscillators (int): Number of internal oscillators
         pattern_length (int): Length of pattern history to maintain
         hidden_size (int, optional): Size of hidden layers. Defaults to 32
+        dropout_rate (float, optional): Dropout probability. Defaults to 0.0
+        noise_level (float, optional): Standard deviation of noise during training. Defaults to 0.0
         seed (int, optional): Random seed for reproducibility. Defaults to None
     """
     
@@ -31,6 +32,8 @@ class ResonanceNetwork(nn.Module):
         n_oscillators: int,
         pattern_length: int,
         hidden_size: int = 32,
+        dropout_rate: float = 0.0,
+        noise_level: float = 0.0,
         seed: int = None
     ):
         super().__init__()
@@ -42,6 +45,12 @@ class ResonanceNetwork(nn.Module):
         self.n_oscillators = n_oscillators
         self.pattern_length = pattern_length
         self.seed = seed
+        self.noise_level = noise_level
+        
+        # Initialize learnable scaling factors with noise
+        self.oscillator_scales = nn.Parameter(
+            torch.ones(n_oscillators) + 0.1 * torch.randn(n_oscillators)
+        )
         
         # Initialize pattern history buffers for each oscillator
         self.pattern_buffers: List[Deque[float]] = [
@@ -49,31 +58,40 @@ class ResonanceNetwork(nn.Module):
         ]
         
         # Initialize buffers with seeded random values
-        generator = torch.Generator()
-        if seed is not None:
-            generator.manual_seed(seed)
-            
-        for buffer in self.pattern_buffers:
-            for _ in range(pattern_length):
-                buffer.append(torch.rand(1, generator=generator).item() * 0.1 - 0.05)
+        self._reset_pattern_buffers()
         
-        # Reduced network capacity to force reliance on resonance dynamics
-        self.hidden_size = hidden_size // 2  # Smaller hidden layer
+        self.hidden_size = hidden_size
         
-        # Oscillator state generation - deliberately simple to encourage emergent behavior
+        # Oscillator state generation - now with dropout
         self.oscillator_net = nn.Sequential(
             nn.Linear(input_size + n_oscillators, self.hidden_size),
+            # nn.Linear(input_size + n_oscillators + n_oscillators, self.hidden_size), # Added resonance context
+            nn.Dropout(dropout_rate),
             nn.Tanh(),
             nn.Linear(self.hidden_size, n_oscillators),
+            nn.Dropout(dropout_rate),
             nn.Tanh()
         )
         
-        # Prediction must rely heavily on oscillator states
+        # Prediction network with resonance context
         self.prediction_net = nn.Sequential(
             nn.Linear(n_oscillators, self.hidden_size),
+            # nn.Linear(n_oscillators + n_oscillators, self.hidden_size),  # Added resonance context
+            nn.Dropout(dropout_rate),
             nn.Tanh(),
             nn.Linear(self.hidden_size, 1)
         )
+
+    def _reset_pattern_buffers(self):
+        """Reset pattern buffers to initial state with small random values."""
+        generator = torch.Generator()
+        if self.seed is not None:
+            generator.manual_seed(self.seed)
+            
+        for buffer in self.pattern_buffers:
+            buffer.clear()
+            for _ in range(self.pattern_length):
+                buffer.append(torch.rand(1, generator=generator).item() * 0.1 - 0.05)
 
     def get_resonance_context(self) -> torch.Tensor:
         """Get the current resonance context from the pattern buffers.
@@ -118,9 +136,19 @@ class ResonanceNetwork(nn.Module):
                 - New oscillator states
                 - Predicted next signal value
         """
+        # Add noise during training if noise_level > 0
+        if self.training and self.noise_level > 0:
+            noise = torch.randn_like(x) * self.noise_level
+            x = x + noise
+            state_noise = torch.randn_like(prev_states) * self.noise_level
+            prev_states = prev_states + state_noise
+        
         # Generate new oscillator states based on input and previous states
         combined = torch.cat([x, prev_states])
         new_states = self.oscillator_net(combined)
+        
+        # Apply learnable scaling factors
+        new_states = new_states * self.oscillator_scales
         
         # Get resonance context
         context = self.get_resonance_context()
@@ -158,8 +186,6 @@ class ResonanceNetwork(nn.Module):
         prev_states = torch.rand(self.n_oscillators, generator=generator) * 0.1 - 0.05
         
         total_loss = 0.0
-        
-        # Process longer subsequences to establish resonance
         seq_length = min(len(signal) - 1, max(50, self.pattern_length * 2))
         
         # Training loop
@@ -171,22 +197,7 @@ class ResonanceNetwork(nn.Module):
             context, new_states, prediction = self(x, prev_states)
             
             # Prediction loss
-            pred_loss = nn.functional.mse_loss(prediction.squeeze(), target)
-            
-            # Resonance quality loss - encourage oscillatory behavior
-            res_loss = 0.0
-            if t > 0:
-                # Encourage state changes (avoid static solutions)
-                state_diff = torch.mean((new_states - prev_states) ** 2)
-                res_loss += 0.1 * torch.exp(-state_diff)  # Penalize small changes
-                
-                # Encourage diverse oscillator behaviors
-                state_cors = torch.corrcoef(torch.stack([new_states, prev_states]))
-                if len(state_cors) > 1:
-                    res_loss += 0.1 * torch.mean(torch.abs(state_cors[0, 1:]))
-            
-            # Combined loss
-            loss = pred_loss + res_loss
+            loss = nn.functional.mse_loss(prediction.squeeze(), target)
             total_loss += loss.item()
             
             # Backward pass

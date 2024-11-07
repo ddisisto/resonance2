@@ -82,12 +82,20 @@ st.sidebar.header("Training Settings")
 n_epochs = st.sidebar.slider("Number of Epochs", min_value=1, max_value=100, value=10)
 learning_rate = st.sidebar.number_input("Learning Rate", min_value=0.0001, max_value=0.1, value=0.01, format="%.4f")
 
+# Add dropout and noise controls
+dropout_rate = st.sidebar.slider("Dropout Rate", min_value=0.0, max_value=0.5, value=0.0, step=0.05,
+                               help="Probability of dropping out neurons during training (0.0 = no dropout)")
+noise_level = st.sidebar.slider("Noise Level", min_value=0.0, max_value=0.2, value=0.0, step=0.01,
+                              help="Amount of random noise to add during training (0.0 = no noise)")
+
 if st.sidebar.button("Train Network"):
     # Initialize network and optimizer
     network = ResonanceNetwork(
         input_size=1,
         n_oscillators=n_oscillators,
         pattern_length=pattern_length,
+        dropout_rate=dropout_rate,
+        noise_level=noise_level,
         seed=random_seed if use_random_seed else None
     )
     optimizer = optim.Adam(network.parameters(), lr=learning_rate)
@@ -105,6 +113,10 @@ if st.sidebar.button("Train Network"):
         loss = network.train_step(combined_pattern, optimizer)
         epoch_losses.append(loss)
         progress_bar.progress((epoch + 1) / n_epochs)
+    
+    # Reset pattern buffers before evaluation
+    network._reset_pattern_buffers()
+    network.eval()  # Set to evaluation mode
     
     # Generate predictions and collect states
     predictions = []
@@ -125,7 +137,9 @@ if st.sidebar.button("Train Network"):
         'predictions': predictions,
         'states_history': states_history,
         'n_oscillators': n_oscillators,
-        'random_seed': random_seed if use_random_seed else None
+        'random_seed': random_seed if use_random_seed else None,
+        'dropout_rate': dropout_rate,
+        'noise_level': noise_level
     }
 
 # Split layout for results
@@ -135,6 +149,10 @@ if st.session_state.training_results is not None:
     # Display seed information if one was used
     if st.session_state.training_results['random_seed'] is not None:
         st.info(f"Random seed used: {st.session_state.training_results['random_seed']}")
+    
+    # Display training parameters
+    st.info(f"Training parameters: Dropout Rate = {st.session_state.training_results['dropout_rate']:.2f}, " +
+            f"Noise Level = {st.session_state.training_results['noise_level']:.2f}")
     
     # Create two columns for results
     left_col, right_col = st.columns([0.5, 0.5])
