@@ -26,8 +26,19 @@ seq_length = st.sidebar.slider("Sequence Length", min_value=10, max_value=1000, 
 st.sidebar.subheader("Signal Components")
 n_components = st.sidebar.number_input("Number of Components", min_value=1, max_value=5, value=2)
 
-# Create multiple generators
-generators = []
+# Initialize or retrieve generators from session state
+if 'generators' not in st.session_state:
+    st.session_state.generators = []
+
+# Update generators if settings change
+if len(st.session_state.generators) != n_components:
+    st.session_state.generators = []
+    for i in range(n_components):
+        freq = i + 1.0
+        phase = 0.0
+        st.session_state.generators.append(SineWaveGenerator(seq_length, freq, phase))
+
+# Create controls for each generator
 for i in range(n_components):
     st.sidebar.markdown(f"**Component {i+1}**")
     col1, col2 = st.sidebar.columns(2)
@@ -37,10 +48,12 @@ for i in range(n_components):
     with col2:
         phase = st.number_input(f"Phase {i+1}", 0.0, 2*np.pi, 0.0, key=f"phase_{i}")
     
-    generators.append(SineWaveGenerator(seq_length, freq, phase))
+    # Update generator parameters if they change
+    st.session_state.generators[i].frequency = freq
+    st.session_state.generators[i].phase = phase
 
-# Generate patterns
-patterns = [gen.generate() for gen in generators]
+# Generate patterns using stored generators
+patterns = [gen.generate() for gen in st.session_state.generators]
 combined_pattern = sum(patterns)
 
 # Initialize session state for training results if not exists
@@ -60,7 +73,7 @@ with sig_col1:
 
 with sig_col2:
     # Component signals plot
-    frequencies = [gen.frequency for gen in generators]
+    frequencies = [gen.frequency for gen in st.session_state.generators]
     fig = create_component_signals_plot(patterns, frequencies)
     st.plotly_chart(fig, use_container_width=True)
 

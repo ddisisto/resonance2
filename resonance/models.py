@@ -57,6 +57,9 @@ class ResonanceNetwork(nn.Module):
             for _ in range(pattern_length):
                 buffer.append(torch.rand(1, generator=generator).item() * 0.1 - 0.05)
         
+        # Store last states for continuity between training steps
+        self.last_states = torch.zeros(n_oscillators)
+        
         # Reduced network capacity to force reliance on resonance dynamics
         self.hidden_size = hidden_size // 2  # Smaller hidden layer
         
@@ -95,10 +98,19 @@ class ResonanceNetwork(nn.Module):
             diffs = [b - a for a, b in zip(recent[:-1], recent[1:])]
             sign_changes = sum(1 for a, b in zip(diffs[:-1], diffs[1:]) if a * b < 0)
             
+            # Calculate phase continuity metric
+            phase_continuity = 0.0
+            if len(buffer_list) >= 2:
+                # Look at consistency of state changes
+                diffs = [b - a for a, b in zip(buffer_list[:-1], buffer_list[1:])]
+                phase_continuity = sum(1 for d1, d2 in zip(diffs[:-1], diffs[1:]) 
+                                    if abs(d2 - d1) < 0.1) / (len(diffs) - 1)
+            
             context.append(sum(recent) / len(recent))  # Average recent state
             context.append(sign_changes)  # Oscillation indicator
+            context.append(phase_continuity)  # Phase continuity metric
             
-        return torch.tensor(context[::2], dtype=torch.float)  # Return only the averages for now
+        return torch.tensor(context[::3], dtype=torch.float)  # Return only the averages for now
 
     def forward(self, x: torch.Tensor, prev_states: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Process input through the network.
@@ -132,6 +144,9 @@ class ResonanceNetwork(nn.Module):
         for i, value in enumerate(new_states):
             self.pattern_buffers[i].append(value.item())
             
+        # Store states for continuity
+        self.last_states = new_states.detach()
+            
         return context, new_states, prediction
 
     def train_step(self, signal: torch.Tensor, optimizer: torch.optim.Optimizer) -> float:
@@ -141,6 +156,7 @@ class ResonanceNetwork(nn.Module):
         1. Only allowing predictions through oscillator states
         2. Using longer sequences to establish resonance
         3. Including additional loss terms for resonance quality
+        4. Maintaining continuity between training steps
         
         Args:
             signal (torch.Tensor): Input signal sequence
@@ -151,19 +167,14 @@ class ResonanceNetwork(nn.Module):
         """
         optimizer.zero_grad()
         
-        # Initialize states with seeded random values if seed is set
-        generator = torch.Generator()
-        if self.seed is not None:
-            generator.manual_seed(self.seed)
-        prev_states = torch.rand(self.n_oscillators, generator=generator) * 0.1 - 0.05
+        # Use last states from previous training step for continuity
+        prev_states = self.last_states
         
         total_loss = 0.0
+        n_steps = 0
         
-        # Process longer subsequences to establish resonance
-        seq_length = min(len(signal) - 1, max(50, self.pattern_length * 2))
-        
-        # Training loop
-        for t in range(seq_length):
+        # Process the full sequence to maintain continuity
+        for t in range(len(signal) - 1):
             x = signal[t].unsqueeze(0)
             target = signal[t + 1]
             
@@ -184,10 +195,15 @@ class ResonanceNetwork(nn.Module):
                 state_cors = torch.corrcoef(torch.stack([new_states, prev_states]))
                 if len(state_cors) > 1:
                     res_loss += 0.1 * torch.mean(torch.abs(state_cors[0, 1:]))
+                
+                # Encourage phase continuity
+                context_diff = torch.mean(context ** 2)
+                res_loss += 0.1 * torch.exp(-context_diff)
             
             # Combined loss
             loss = pred_loss + res_loss
             total_loss += loss.item()
+            n_steps += 1
             
             # Backward pass
             loss.backward()
@@ -198,4 +214,7 @@ class ResonanceNetwork(nn.Module):
         # Update weights
         optimizer.step()
         
-        return total_loss / seq_length
+        # Store final states for next training step
+        self.last_states = prev_states
+        
+        return total_loss / n_steps
