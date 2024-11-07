@@ -21,9 +21,10 @@ def create_training_progress_plot(losses: List[float]) -> go.Figure:
     ))
     
     fig.update_layout(
-        title="Training Loss Over Time",
+        title=f"Training Loss Over Time (Final: {losses[-1]:.5f})",
         xaxis_title="Epoch",
         yaxis_title="Loss",
+        yaxis_type="log",  # Set y-axis to logarithmic scale
         height=250,
         margin=dict(l=0, r=0, t=40, b=0)
     )
