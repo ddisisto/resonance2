@@ -21,6 +21,7 @@ class PatternGenerator:
     
     def __init__(self, seq_length: int):
         self.seq_length = seq_length
+        self.current_time = 0.0  # Track current time point
     
     def generate(self) -> torch.Tensor:
         """Generate a pattern sequence.
@@ -34,11 +35,12 @@ class SineWaveGenerator(PatternGenerator):
     """Generates sinusoidal wave patterns.
     
     Creates sine wave patterns with configurable frequency and phase.
+    Maintains continuity across multiple generations.
     
     Args:
         seq_length (int): The length of sequences to generate
         frequency (float): The frequency of the sine wave
-        phase (float, optional): Phase offset of the wave. Defaults to 0.0
+        phase (float, optional): Initial phase offset of the wave. Defaults to 0.0
     """
     
     def __init__(self, seq_length: int, frequency: float, phase: float = 0.0):
@@ -47,10 +49,18 @@ class SineWaveGenerator(PatternGenerator):
         self.phase = phase
     
     def generate(self) -> torch.Tensor:
-        """Generate a sine wave pattern.
+        """Generate a sine wave pattern continuing from the last time point.
         
         Returns:
             torch.Tensor: A tensor of shape (seq_length,) containing the sine wave pattern
         """
-        t = torch.linspace(0, 2*np.pi, self.seq_length)
+        # Generate time points continuing from current_time
+        t = torch.linspace(
+            self.current_time,
+            self.current_time + 2*np.pi,
+            self.seq_length
+        )
+        # Update current_time for next generation
+        self.current_time += 2*np.pi
+        
         return torch.sin(self.frequency * t + self.phase)

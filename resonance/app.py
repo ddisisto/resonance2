@@ -26,8 +26,19 @@ seq_length = st.sidebar.slider("Sequence Length", min_value=10, max_value=1000, 
 st.sidebar.subheader("Signal Components")
 n_components = st.sidebar.number_input("Number of Components", min_value=1, max_value=5, value=2)
 
-# Create multiple generators
-generators = []
+# Initialize or retrieve generators from session state
+if 'generators' not in st.session_state:
+    st.session_state.generators = []
+
+# Update generators if settings change
+if len(st.session_state.generators) != n_components:
+    st.session_state.generators = []
+    for i in range(n_components):
+        freq = i + 1.0
+        phase = 0.0
+        st.session_state.generators.append(SineWaveGenerator(seq_length, freq, phase))
+
+# Create controls for each generator
 for i in range(n_components):
     st.sidebar.markdown(f"**Component {i+1}**")
     col1, col2 = st.sidebar.columns(2)
@@ -37,11 +48,16 @@ for i in range(n_components):
     with col2:
         phase = st.number_input(f"Phase {i+1}", 0.0, 2*np.pi, 0.0, key=f"phase_{i}")
     
-    generators.append(SineWaveGenerator(seq_length, freq, phase))
+    # Update generator parameters if they change
+    st.session_state.generators[i].frequency = freq
+    st.session_state.generators[i].phase = phase
 
-# Generate patterns
-patterns = [gen.generate() for gen in generators]
+# Generate patterns using stored generators
+patterns = [gen.generate() for gen in st.session_state.generators]
 combined_pattern = sum(patterns)
+
+# Get current time for visualization
+current_time = st.session_state.generators[0].current_time - 2*np.pi
 
 # Initialize session state for training results if not exists
 if 'training_results' not in st.session_state:
@@ -54,14 +70,14 @@ st.subheader("Signal Visualization")
 sig_col1, sig_col2 = st.columns(2)
 
 with sig_col1:
-    # Combined signal plot
-    fig = create_combined_signal_plot(combined_pattern)
+    # Combined signal plot with current time
+    fig = create_combined_signal_plot(combined_pattern, start_time=current_time)
     st.plotly_chart(fig, use_container_width=True)
 
 with sig_col2:
-    # Component signals plot
-    frequencies = [gen.frequency for gen in generators]
-    fig = create_component_signals_plot(patterns, frequencies)
+    # Component signals plot with current time
+    frequencies = [gen.frequency for gen in st.session_state.generators]
+    fig = create_component_signals_plot(patterns, frequencies, start_time=current_time)
     st.plotly_chart(fig, use_container_width=True)
 
 # Network settings
@@ -98,7 +114,7 @@ if st.sidebar.button("Train Network"):
     
     # Store oscillator states during training
     states_history = []
-    prev_states = torch.zeros(n_oscillators)
+    prev_states = network.last_states  # Use continuous states
     
     # Training loop
     for epoch in range(n_epochs):
@@ -108,7 +124,7 @@ if st.sidebar.button("Train Network"):
     
     # Generate predictions and collect states
     predictions = []
-    prev_states = torch.zeros(n_oscillators)
+    prev_states = network.last_states  # Use continuous states
     
     with torch.no_grad():
         for t in range(len(combined_pattern) - 1):
