@@ -22,6 +22,7 @@ class ResonanceNetwork(nn.Module):
         n_oscillators (int): Number of internal oscillators
         pattern_length (int): Length of pattern history to maintain
         hidden_size (int, optional): Size of hidden layers. Defaults to 32
+        seed (int, optional): Random seed for reproducibility. Defaults to None
     """
     
     def __init__(
@@ -29,21 +30,32 @@ class ResonanceNetwork(nn.Module):
         input_size: int,
         n_oscillators: int,
         pattern_length: int,
-        hidden_size: int = 32
+        hidden_size: int = 32,
+        seed: int = None
     ):
         super().__init__()
+        
+        # Set random seed if provided
+        if seed is not None:
+            torch.manual_seed(seed)
+            
         self.n_oscillators = n_oscillators
         self.pattern_length = pattern_length
+        self.seed = seed
         
         # Initialize pattern history buffers for each oscillator
         self.pattern_buffers: List[Deque[float]] = [
             deque(maxlen=pattern_length) for _ in range(n_oscillators)
         ]
         
-        # Initialize buffers with small random values to break symmetry
+        # Initialize buffers with seeded random values
+        generator = torch.Generator()
+        if seed is not None:
+            generator.manual_seed(seed)
+            
         for buffer in self.pattern_buffers:
             for _ in range(pattern_length):
-                buffer.append(torch.rand(1).item() * 0.1 - 0.05)
+                buffer.append(torch.rand(1, generator=generator).item() * 0.1 - 0.05)
         
         # Reduced network capacity to force reliance on resonance dynamics
         self.hidden_size = hidden_size // 2  # Smaller hidden layer
@@ -139,8 +151,12 @@ class ResonanceNetwork(nn.Module):
         """
         optimizer.zero_grad()
         
-        # Initialize states with small random values
-        prev_states = torch.rand(self.n_oscillators) * 0.1 - 0.05
+        # Initialize states with seeded random values if seed is set
+        generator = torch.Generator()
+        if self.seed is not None:
+            generator.manual_seed(self.seed)
+        prev_states = torch.rand(self.n_oscillators, generator=generator) * 0.1 - 0.05
+        
         total_loss = 0.0
         
         # Process longer subsequences to establish resonance

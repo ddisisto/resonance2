@@ -69,6 +69,14 @@ st.sidebar.header("Resonance Network Settings")
 n_oscillators = st.sidebar.slider("Number of Oscillators", min_value=1, max_value=10, value=3)
 pattern_length = st.sidebar.slider("Pattern History Length", min_value=5, max_value=50, value=10)
 
+# Random seed input with integer validation
+use_random_seed = st.sidebar.checkbox("Use Random Seed", value=False, 
+                                    help="Enable to set a specific seed for reproducible results")
+random_seed = None
+if use_random_seed:
+    random_seed = st.sidebar.number_input("Random Seed", min_value=0, value=42, step=1,
+                                        help="Integer seed value for reproducible results")
+
 # Training settings
 st.sidebar.header("Training Settings")
 n_epochs = st.sidebar.slider("Number of Epochs", min_value=1, max_value=100, value=10)
@@ -79,7 +87,8 @@ if st.sidebar.button("Train Network"):
     network = ResonanceNetwork(
         input_size=1,
         n_oscillators=n_oscillators,
-        pattern_length=pattern_length
+        pattern_length=pattern_length,
+        seed=random_seed if use_random_seed else None
     )
     optimizer = optim.Adam(network.parameters(), lr=learning_rate)
     
@@ -115,12 +124,17 @@ if st.sidebar.button("Train Network"):
         'epoch_losses': epoch_losses,
         'predictions': predictions,
         'states_history': states_history,
-        'n_oscillators': n_oscillators
+        'n_oscillators': n_oscillators,
+        'random_seed': random_seed if use_random_seed else None
     }
 
 # Split layout for results
 if st.session_state.training_results is not None:
     st.success(f"Training completed! Final loss: {st.session_state.training_results['loss']:.6f}")
+    
+    # Display seed information if one was used
+    if st.session_state.training_results['random_seed'] is not None:
+        st.info(f"Random seed used: {st.session_state.training_results['random_seed']}")
     
     # Create two columns for results
     left_col, right_col = st.columns([0.5, 0.5])
