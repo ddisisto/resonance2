@@ -56,6 +56,9 @@ for i in range(n_components):
 patterns = [gen.generate() for gen in st.session_state.generators]
 combined_pattern = sum(patterns)
 
+# Get current time for visualization
+current_time = st.session_state.generators[0].current_time - 2*np.pi
+
 # Initialize session state for training results if not exists
 if 'training_results' not in st.session_state:
     st.session_state.training_results = None
@@ -67,14 +70,14 @@ st.subheader("Signal Visualization")
 sig_col1, sig_col2 = st.columns(2)
 
 with sig_col1:
-    # Combined signal plot
-    fig = create_combined_signal_plot(combined_pattern)
+    # Combined signal plot with current time
+    fig = create_combined_signal_plot(combined_pattern, start_time=current_time)
     st.plotly_chart(fig, use_container_width=True)
 
 with sig_col2:
-    # Component signals plot
+    # Component signals plot with current time
     frequencies = [gen.frequency for gen in st.session_state.generators]
-    fig = create_component_signals_plot(patterns, frequencies)
+    fig = create_component_signals_plot(patterns, frequencies, start_time=current_time)
     st.plotly_chart(fig, use_container_width=True)
 
 # Network settings
@@ -111,7 +114,7 @@ if st.sidebar.button("Train Network"):
     
     # Store oscillator states during training
     states_history = []
-    prev_states = torch.zeros(n_oscillators)
+    prev_states = network.last_states  # Use continuous states
     
     # Training loop
     for epoch in range(n_epochs):
@@ -121,7 +124,7 @@ if st.sidebar.button("Train Network"):
     
     # Generate predictions and collect states
     predictions = []
-    prev_states = torch.zeros(n_oscillators)
+    prev_states = network.last_states  # Use continuous states
     
     with torch.no_grad():
         for t in range(len(combined_pattern) - 1):
