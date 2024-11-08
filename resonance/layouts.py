@@ -90,7 +90,30 @@ def create_sidebar():
                         step=0.0001
                     ),
                     html.Br(),
-                    dbc.Button("Train Network", id="train-button", color="primary")
+                    dbc.Button(
+                        "Train Network",
+                        id="train-button",
+                        color="primary",
+                        className="w-100 mb-3"
+                    ),
+                    # Progress section
+                    html.Div([
+                        dbc.Progress(
+                            id="training-progress-bar",
+                            value=0,
+                            striped=True,
+                            animated=True,
+                            style={"height": "20px", "visibility": "hidden"}
+                        ),
+                        html.Div(
+                            id="training-progress-text",
+                            style={
+                                "textAlign": "center",
+                                "marginTop": "5px",
+                                "visibility": "hidden"
+                            }
+                        )
+                    ], id="training-progress-container")
                 ])
             ])
         ],
@@ -108,7 +131,7 @@ def create_content():
                 dcc.Graph(id='individual-outputs')
             ], label="Components"),
             dbc.Tab([
-                dcc.Graph(id='training-progress'),
+                dcc.Graph(id='training-progress-plot'),
                 dcc.Graph(id='prediction-comparison'),
                 dcc.Graph(id='oscillator-outputs'),
                 dcc.Graph(id='phase-space')
@@ -126,5 +149,7 @@ def create_layout():
             'phases': phases
         }),
         # Store for training results
-        dcc.Store(id='training-results', data=None)
+        dcc.Store(id='training-results', data=None),
+        # Store for training progress
+        dcc.Store(id='training-progress-store', data={'progress': 0, 'is_training': False})
     ], fluid=True)

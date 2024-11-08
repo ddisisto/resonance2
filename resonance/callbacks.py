@@ -1,24 +1,21 @@
 """Callback functions for the Dash application."""
 
-import torch
-import torch.optim as optim
 import numpy as np
 from dash import Input, Output, State, ALL
 from resonance.generators import SineWaveGenerator
-from resonance.models import ResonanceNetwork
 from resonance.visualizations import (
     create_combined_signal_plot,
-    create_component_signals_plot,
-    create_training_progress_plot,
-    create_prediction_comparison_plot,
-    create_multi_phase_plot,
-    create_oscillator_outputs_plot
+    create_component_signals_plot
 )
 import dash_bootstrap_components as dbc
 from dash import html
+from resonance.training import register_training_callbacks
 
 def register_callbacks(app):
     """Register all callbacks with the Dash app."""
+    
+    # Register training callbacks
+    register_training_callbacks(app)
     
     @app.callback(
         Output("component-controls", "children"),
@@ -145,118 +142,3 @@ def register_callbacks(app):
         components_fig = create_component_signals_plot(patterns, valid_freqs)
         
         return combined_fig, components_fig
-
-    @app.callback(
-        Output('training-results', 'data'),
-        [Input('train-button', 'n_clicks')],
-        [State('n-oscillators-input', 'value'),
-         State('pattern-length-input', 'value'),
-         State('random-seed-input', 'value'),
-         State('n-epochs-input', 'value'),
-         State('learning-rate-input', 'value'),
-         State('n-components-input', 'value'),
-         State('seq-length-input', 'value'),
-         State('component-params', 'data')]
-    )
-    def train_network(n_clicks, n_oscillators, pattern_length, random_seed, 
-                     n_epochs, learning_rate, n_comps, seq_len, params):
-        if not n_clicks:
-            return None
-            
-        # Generate patterns
-        patterns = []
-        for i in range(min(n_comps, len(params['frequencies']))):
-            gen = SineWaveGenerator(seq_len, params['frequencies'][i], params['phases'][i])
-            patterns.append(gen.generate())
-        
-        if not patterns:
-            return None
-            
-        combined_pattern = sum(patterns)
-        
-        # Initialize network and optimizer
-        network = ResonanceNetwork(
-            input_size=1,
-            n_oscillators=n_oscillators,
-            pattern_length=pattern_length,
-            seed=random_seed
-        )
-        optimizer = optim.Adam(network.parameters(), lr=learning_rate)
-        
-        # Training loop
-        epoch_losses = []
-        states_history = []
-        prev_states = torch.zeros(n_oscillators)
-        
-        for epoch in range(n_epochs):
-            loss = network.train_step(combined_pattern, optimizer)
-            epoch_losses.append(loss)
-        
-        # Generate predictions and collect states
-        predictions = []
-        prev_states = torch.zeros(n_oscillators)
-        
-        with torch.no_grad():
-            for t in range(len(combined_pattern) - 1):
-                x = combined_pattern[t].unsqueeze(0)
-                _, new_states, pred = network(x, prev_states)
-                predictions.append(pred.item())
-                states_history.append(new_states.tolist())
-                prev_states = new_states
-        
-        return {
-            'loss': loss,
-            'epoch_losses': epoch_losses,
-            'predictions': predictions,
-            'states_history': states_history,
-            'n_oscillators': n_oscillators,
-            'random_seed': random_seed
-        }
-
-    @app.callback(
-        [Output('training-progress', 'figure'),
-         Output('prediction-comparison', 'figure'),
-         Output('oscillator-outputs', 'figure'),
-         Output('phase-space', 'figure')],
-        [Input('training-results', 'data'),
-         Input('n-components-input', 'value'),
-         Input('seq-length-input', 'value'),
-         Input('component-params', 'data')]
-    )
-    def update_training_plots(results, n_comps, seq_len, params):
-        if not results or not n_comps or not seq_len or not params:
-            return {}, {}, {}, {}
-        
-        # Generate current pattern for comparison
-        patterns = []
-        for i in range(min(n_comps, len(params['frequencies']))):
-            gen = SineWaveGenerator(seq_len, params['frequencies'][i], params['phases'][i])
-            patterns.append(gen.generate())
-        
-        if not patterns:
-            return {}, {}, {}, {}
-            
-        combined_pattern = sum(patterns)
-        
-        # Create training progress plot
-        progress_fig = create_training_progress_plot(results['epoch_losses'])
-        
-        # Create prediction comparison plot
-        prediction_fig = create_prediction_comparison_plot(
-            combined_pattern[1:],
-            results['predictions']
-        )
-        
-        # Create oscillator outputs plot
-        outputs_fig = create_oscillator_outputs_plot(
-            results['states_history'],
-            results['n_oscillators']
-        )
-        
-        # Create phase space plot
-        phase_fig = create_multi_phase_plot(
-            results['states_history'],
-            results['n_oscillators']
-        )
-        
-        return progress_fig, prediction_fig, outputs_fig, phase_fig
