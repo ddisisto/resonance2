@@ -21,7 +21,7 @@ def create_training_progress_plot(losses: List[float]) -> go.Figure:
     ))
     
     fig.update_layout(
-        title=f"Training Loss Over Time (Final: {losses[-1]:.5f})",
+        # title=f"Training Loss Over Time (Final: {losses[-1]:.5f})",
         xaxis_title="Epoch",
         yaxis_title="Loss",
         yaxis_type="log",
@@ -56,7 +56,7 @@ def create_prediction_comparison_plot(
     ))
     
     fig.update_layout(
-        title="Model Predictions vs Actual Signal",
+        # title="Model Predictions vs Actual Signal",
         xaxis_title="Time Step",
         yaxis_title="Amplitude",
         height=250,

@@ -18,67 +18,61 @@ st.set_page_config(layout="wide")
 
 st.title("Resonance Pattern Generator")
 
-# Sidebar controls
-st.sidebar.header("Pattern Generator Settings")
-seq_length = st.sidebar.slider("Sequence Length", min_value=10, max_value=1000, value=100)
-
-# Multiple generator controls
-st.sidebar.subheader("Signal Components")
-n_components = st.sidebar.number_input("Number of Components", min_value=1, max_value=5, value=2)
-
-# Initialize or retrieve generators from session state
+# Initialize session state for generators if not exists
 if 'generators' not in st.session_state:
     st.session_state.generators = []
 
-# Update generators if settings change
+# Sidebar controls
+st.sidebar.header("Pattern Generator Settings")
+
+seq_length = st.sidebar.slider("Sequence Length", min_value=10, max_value=1000, value=100)
+
+# Multiple generator controls
+n_components = st.sidebar.number_input("Number of Components", min_value=1, max_value=5, value=2)
+
+# Create or update generators
 if len(st.session_state.generators) != n_components:
     st.session_state.generators = []
     for i in range(n_components):
-        freq = i + 1.0
-        phase = 0.0
-        st.session_state.generators.append(SineWaveGenerator(seq_length, freq, phase))
+        st.session_state.generators.append(SineWaveGenerator(seq_length, i + 1.0, 0.0))
 
-# Create controls for each generator
-for i in range(n_components):
-    st.sidebar.markdown(f"**Component {i+1}**")
-    col1, col2 = st.sidebar.columns(2)
-    
-    with col1:
-        freq = st.number_input(f"Frequency {i+1}", 0.1, 10.0, i + 1.0, key=f"freq_{i}")
-    with col2:
-        phase = st.number_input(f"Phase {i+1}", 0.0, 2*np.pi, 0.0, key=f"phase_{i}")
-    
-    # Update generator parameters if they change
-    st.session_state.generators[i].frequency = freq
-    st.session_state.generators[i].phase = phase
+# Generator controls
+with st.sidebar.expander('Components'):
+    for i, gen in enumerate(st.session_state.generators):
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            freq = st.number_input(f"Frequency {i+1}", 0.1, 10.0, i + 1.0, key=f"freq_{i}")
+        with col2:
+            phase = st.number_input(f"Phase {i+1}", 0.0, 2*np.pi, 0.0, key=f"phase_{i}")
+        
+        gen.frequency = freq
+        gen.phase = phase
 
-# Generate patterns using stored generators
+# Generate patterns using persisted generators
 patterns = [gen.generate() for gen in st.session_state.generators]
 combined_pattern = sum(patterns)
-
-# Get current time for visualization
-current_time = st.session_state.generators[0].current_time - 2*np.pi
 
 # Initialize session state for training results if not exists
 if 'training_results' not in st.session_state:
     st.session_state.training_results = None
 
 # Signal Visualization section (full width)
-st.subheader("Signal Visualization")
+# st.subheader("Signal Visualization")
 
-# Side-by-side signal plots
-sig_col1, sig_col2 = st.columns(2)
+# Two column layout
+col1, col2 = st.columns([1, 2])
 
-with sig_col1:
-    # Combined signal plot with current time
-    fig = create_combined_signal_plot(combined_pattern, start_time=current_time)
-    st.plotly_chart(fig, use_container_width=True)
+with col1:
+    # Combined signal plot
+    sig_tab1, sig_tab2 = st.tabs(["Combined", "Components"])
 
-with sig_col2:
-    # Component signals plot with current time
+    fig = create_combined_signal_plot(combined_pattern)
+    sig_tab1.plotly_chart(fig, use_container_width=True)
+
     frequencies = [gen.frequency for gen in st.session_state.generators]
-    fig = create_component_signals_plot(patterns, frequencies, start_time=current_time)
-    st.plotly_chart(fig, use_container_width=True)
+    fig = create_component_signals_plot(patterns, frequencies)
+    sig_tab2.plotly_chart(fig, use_container_width=True)
+
 
 # Network settings
 st.sidebar.header("Resonance Network Settings")
@@ -86,12 +80,12 @@ n_oscillators = st.sidebar.slider("Number of Oscillators", min_value=1, max_valu
 pattern_length = st.sidebar.slider("Pattern History Length", min_value=5, max_value=50, value=10)
 
 # Random seed input with integer validation
-use_random_seed = st.sidebar.checkbox("Use Random Seed", value=False, 
-                                    help="Enable to set a specific seed for reproducible results")
-random_seed = None
-if use_random_seed:
-    random_seed = st.sidebar.number_input("Random Seed", min_value=0, value=42, step=1,
-                                        help="Integer seed value for reproducible results")
+# use_random_seed = st.sidebar.checkbox("Use Random Seed", value=False, 
+#                                     help="Enable to set a specific seed for reproducible results")
+# random_seed = None
+# if use_random_seed:
+random_seed = st.sidebar.number_input("Random Seed", min_value=0, value=42, step=1,
+                                    help="Integer seed value for reproducible results")
 
 # Training settings
 st.sidebar.header("Training Settings")
@@ -104,7 +98,7 @@ if st.sidebar.button("Train Network"):
         input_size=1,
         n_oscillators=n_oscillators,
         pattern_length=pattern_length,
-        seed=random_seed if use_random_seed else None
+        seed=random_seed # if use_random_seed else None
     )
     optimizer = optim.Adam(network.parameters(), lr=learning_rate)
     
@@ -114,7 +108,7 @@ if st.sidebar.button("Train Network"):
     
     # Store oscillator states during training
     states_history = []
-    prev_states = network.last_states  # Use continuous states
+    prev_states = torch.zeros(n_oscillators)
     
     # Training loop
     for epoch in range(n_epochs):
@@ -124,7 +118,7 @@ if st.sidebar.button("Train Network"):
     
     # Generate predictions and collect states
     predictions = []
-    prev_states = network.last_states  # Use continuous states
+    prev_states = torch.zeros(n_oscillators)
     
     with torch.no_grad():
         for t in range(len(combined_pattern) - 1):
@@ -141,48 +135,35 @@ if st.sidebar.button("Train Network"):
         'predictions': predictions,
         'states_history': states_history,
         'n_oscillators': n_oscillators,
-        'random_seed': random_seed if use_random_seed else None
+        'random_seed': random_seed # if use_random_seed else None
     }
 
 # Split layout for results
 if st.session_state.training_results is not None:
-    st.success(f"Training completed! Final loss: {st.session_state.training_results['loss']:.6f}")
-    
-    # Display seed information if one was used
-    if st.session_state.training_results['random_seed'] is not None:
-        st.info(f"Random seed used: {st.session_state.training_results['random_seed']}")
-    
-    # Create two columns for results
-    left_col, right_col = st.columns([0.5, 0.5])
-    
-    with left_col:
-        st.subheader("Training Results")
-        
-        # Training progress plot
-        st.markdown("### Training Progress")
+
+    n_oscillators = st.session_state.training_results['n_oscillators']
+    states_history = st.session_state.training_results['states_history']
+
+    with col1:
+
+        final_loss = st.session_state.training_results['epoch_losses'][-1]
+        st.subheader(f"Training Progress (Loss: {final_loss:.5f})")
         fig = create_training_progress_plot(st.session_state.training_results['epoch_losses'])
         st.plotly_chart(fig, use_container_width=True)
         
-        # Prediction results plot
-        st.markdown("### Prediction Results")
+        st.subheader("Prediction Results")
         fig = create_prediction_comparison_plot(
             combined_pattern[1:],
             st.session_state.training_results['predictions']
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    with right_col:
-        st.subheader("Phase Space Analysis")
-        
-        n_oscillators = st.session_state.training_results['n_oscillators']
-        states_history = st.session_state.training_results['states_history']
-        
-        # Show individual oscillator outputs
-        st.markdown("### Individual Oscillator Outputs")
+        st.subheader("Individual Oscillator Outputs")
         fig = create_oscillator_outputs_plot(states_history, n_oscillators)
         st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
         
-        # Show multi-oscillator phase space analysis
-        st.markdown("### Multi-Oscillator Analysis")
+        st.subheader("Multi-Oscillator Analysis")
         fig_multi = create_multi_phase_plot(states_history, n_oscillators)
         st.plotly_chart(fig_multi, use_container_width=True)

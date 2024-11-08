@@ -21,7 +21,7 @@ class PatternGenerator:
     
     def __init__(self, seq_length: int):
         self.seq_length = seq_length
-        self.current_time = 0.0  # Track current time point
+        self.current_t = 0.0  # Track continuous time
     
     def generate(self) -> torch.Tensor:
         """Generate a pattern sequence.
@@ -35,12 +35,12 @@ class SineWaveGenerator(PatternGenerator):
     """Generates sinusoidal wave patterns.
     
     Creates sine wave patterns with configurable frequency and phase.
-    Maintains continuity across multiple generations.
+    Maintains continuous time state across generations.
     
     Args:
         seq_length (int): The length of sequences to generate
         frequency (float): The frequency of the sine wave
-        phase (float, optional): Initial phase offset of the wave. Defaults to 0.0
+        phase (float, optional): Phase offset of the wave. Defaults to 0.0
     """
     
     def __init__(self, seq_length: int, frequency: float, phase: float = 0.0):
@@ -49,18 +49,17 @@ class SineWaveGenerator(PatternGenerator):
         self.phase = phase
     
     def generate(self) -> torch.Tensor:
-        """Generate a sine wave pattern continuing from the last time point.
+        """Generate a sine wave pattern continuing from last state.
         
         Returns:
             torch.Tensor: A tensor of shape (seq_length,) containing the sine wave pattern
         """
-        # Generate time points continuing from current_time
-        t = torch.linspace(
-            self.current_time,
-            self.current_time + 2*np.pi,
-            self.seq_length
-        )
-        # Update current_time for next generation
-        self.current_time += 2*np.pi
+        # Generate time points continuing from current_t
+        t = torch.linspace(self.current_t, 
+                          self.current_t + 2*np.pi, 
+                          self.seq_length)
+        
+        # Update current_t for next generation
+        self.current_t += 2*np.pi
         
         return torch.sin(self.frequency * t + self.phase)

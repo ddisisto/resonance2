@@ -36,7 +36,7 @@ def create_oscillator_outputs_plot(states_history: List[List[float]], n_oscillat
 def create_multi_phase_plot(
     states_history: List[List[float]],
     n_oscillators: int,
-    show_colorbar: bool = True
+    show_colorbar: bool = False
 ) -> go.Figure:
     """Create a grid of 2D phase space plots for all oscillator pairs."""
     # Calculate grid dimensions
@@ -45,7 +45,7 @@ def create_multi_phase_plot(
     
     # Create subplot titles with more context
     subplot_titles = [
-        f'Phase Space: Osc {i+1} vs {j+1}'
+        f'{i+1} vs {j+1}'
         for i in range(n_oscillators-1)
         for j in range(i+1, n_oscillators)
     ]

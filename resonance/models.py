@@ -44,8 +44,9 @@ class ResonanceNetwork(nn.Module):
         self.seed = seed
         
         # Initialize pattern history buffers for each oscillator
+        # Increased buffer size to maintain longer history
         self.pattern_buffers: List[Deque[float]] = [
-            deque(maxlen=pattern_length) for _ in range(n_oscillators)
+            deque(maxlen=pattern_length * 2) for _ in range(n_oscillators)
         ]
         
         # Initialize buffers with seeded random values
@@ -54,28 +55,28 @@ class ResonanceNetwork(nn.Module):
             generator.manual_seed(seed)
             
         for buffer in self.pattern_buffers:
-            for _ in range(pattern_length):
+            for _ in range(pattern_length * 2):  # Initialize full buffer
                 buffer.append(torch.rand(1, generator=generator).item() * 0.1 - 0.05)
         
-        # Store last states for continuity between training steps
-        self.last_states = torch.zeros(n_oscillators)
+        self.hidden_size = hidden_size
         
-        # Reduced network capacity to force reliance on resonance dynamics
-        self.hidden_size = hidden_size // 2  # Smaller hidden layer
-        
-        # Oscillator state generation - deliberately simple to encourage emergent behavior
+        # Enhanced oscillator state generation
         self.oscillator_net = nn.Sequential(
-            nn.Linear(input_size + n_oscillators, self.hidden_size),
+            nn.Linear(input_size + n_oscillators + n_oscillators * 3, self.hidden_size),  # Adjusted for context size
+            nn.Tanh(),
+            nn.Linear(self.hidden_size, self.hidden_size),
             nn.Tanh(),
             nn.Linear(self.hidden_size, n_oscillators),
             nn.Tanh()
         )
         
-        # Prediction must rely heavily on oscillator states
+        # Prediction network with resonance context
         self.prediction_net = nn.Sequential(
-            nn.Linear(n_oscillators, self.hidden_size),
+            nn.Linear(n_oscillators + n_oscillators * 3, self.hidden_size),  # Adjusted for context size
             nn.Tanh(),
-            nn.Linear(self.hidden_size, 1)
+            nn.Linear(self.hidden_size, self.hidden_size // 2),
+            nn.Tanh(),
+            nn.Linear(self.hidden_size // 2, 1)
         )
 
     def get_resonance_context(self) -> torch.Tensor:
@@ -86,39 +87,41 @@ class ResonanceNetwork(nn.Module):
         """
         context = []
         for buffer in self.pattern_buffers:
-            # Calculate phase-like relationships from history
             buffer_list = list(buffer)
             
-            # Recent trajectory (last few states)
-            recent = buffer_list[-3:]
-            if len(recent) < 3:
-                recent = [0.0] * (3 - len(recent)) + recent
+            # Enhanced resonance analysis using full buffer
+            if len(buffer_list) >= 4:
+                # Compute rate of change (velocity)
+                velocities = [b - a for a, b in zip(buffer_list[:-1], buffer_list[1:])]
                 
-            # Oscillation indicators
-            diffs = [b - a for a, b in zip(recent[:-1], recent[1:])]
-            sign_changes = sum(1 for a, b in zip(diffs[:-1], diffs[1:]) if a * b < 0)
+                # Compute acceleration
+                accelerations = [v2 - v1 for v1, v2 in zip(velocities[:-1], velocities[1:])]
+                
+                # Detect oscillation characteristics
+                zero_crossings = sum(1 for v1, v2 in zip(velocities[:-1], velocities[1:]) 
+                                   if v1 * v2 < 0)
+                
+                # Compute momentum (weighted sum of recent states)
+                momentum = sum(v * (i + 1) for i, v in enumerate(reversed(buffer_list[-4:]))) / 10
+                
+                context.extend([
+                    momentum,  # Recent trajectory with momentum
+                    zero_crossings / len(velocities),  # Normalized oscillation frequency
+                    sum(accelerations) / len(accelerations)  # Average acceleration
+                ])
+            else:
+                # Fallback for insufficient history
+                context.extend([0.0, 0.0, 0.0])
             
-            # Calculate phase continuity metric
-            phase_continuity = 0.0
-            if len(buffer_list) >= 2:
-                # Look at consistency of state changes
-                diffs = [b - a for a, b in zip(buffer_list[:-1], buffer_list[1:])]
-                phase_continuity = sum(1 for d1, d2 in zip(diffs[:-1], diffs[1:]) 
-                                    if abs(d2 - d1) < 0.1) / (len(diffs) - 1)
-            
-            context.append(sum(recent) / len(recent))  # Average recent state
-            context.append(sign_changes)  # Oscillation indicator
-            context.append(phase_continuity)  # Phase continuity metric
-            
-        return torch.tensor(context[::3], dtype=torch.float)  # Return only the averages for now
+        return torch.tensor(context, dtype=torch.float)
 
     def forward(self, x: torch.Tensor, prev_states: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Process input through the network.
         
-        The forward pass now forces reliance on oscillator dynamics by:
-        1. Only allowing predictions based on oscillator states
-        2. Maintaining simpler state transitions
-        3. Using resonance context to influence state generation
+        The forward pass now incorporates richer resonance dynamics by:
+        1. Using extended resonance context
+        2. Maintaining longer state history
+        3. Including acceleration and momentum in state transitions
         
         Args:
             x (torch.Tensor): Input tensor
@@ -130,33 +133,34 @@ class ResonanceNetwork(nn.Module):
                 - New oscillator states
                 - Predicted next signal value
         """
-        # Generate new oscillator states based on input and previous states
-        combined = torch.cat([x, prev_states])
-        new_states = self.oscillator_net(combined)
-        
         # Get resonance context
         context = self.get_resonance_context()
         
-        # Prediction can only use oscillator states - forcing reliance on resonance
-        prediction = self.prediction_net(new_states)
+        # Ensure input tensor has correct shape
+        if len(x.shape) == 0:
+            x = x.unsqueeze(0)
+        
+        # Generate new oscillator states based on input, previous states, and context
+        combined = torch.cat([x, prev_states, context])
+        new_states = self.oscillator_net(combined)
+        
+        # Prediction using both states and context
+        pred_input = torch.cat([new_states, context])
+        prediction = self.prediction_net(pred_input)
         
         # Update pattern history buffers
         for i, value in enumerate(new_states):
             self.pattern_buffers[i].append(value.item())
-            
-        # Store states for continuity
-        self.last_states = new_states.detach()
             
         return context, new_states, prediction
 
     def train_step(self, signal: torch.Tensor, optimizer: torch.optim.Optimizer) -> float:
         """Perform a single training step on a signal sequence.
         
-        Training now emphasizes the importance of resonance by:
-        1. Only allowing predictions through oscillator states
-        2. Using longer sequences to establish resonance
-        3. Including additional loss terms for resonance quality
-        4. Maintaining continuity between training steps
+        Training now emphasizes continuous signal processing by:
+        1. Using full sequence length
+        2. Incorporating momentum and acceleration
+        3. Maintaining state continuity
         
         Args:
             signal (torch.Tensor): Input signal sequence
@@ -167,14 +171,19 @@ class ResonanceNetwork(nn.Module):
         """
         optimizer.zero_grad()
         
-        # Use last states from previous training step for continuity
-        prev_states = self.last_states
+        # Initialize states with seeded random values if seed is set
+        generator = torch.Generator()
+        if self.seed is not None:
+            generator.manual_seed(self.seed)
+        prev_states = torch.rand(self.n_oscillators, generator=generator) * 0.1 - 0.05
         
         total_loss = 0.0
-        n_steps = 0
         
-        # Process the full sequence to maintain continuity
-        for t in range(len(signal) - 1):
+        # Process full sequence for better continuity
+        seq_length = len(signal) - 1
+        
+        # Training loop
+        for t in range(seq_length):
             x = signal[t].unsqueeze(0)
             target = signal[t + 1]
             
@@ -184,26 +193,21 @@ class ResonanceNetwork(nn.Module):
             # Prediction loss
             pred_loss = nn.functional.mse_loss(prediction.squeeze(), target)
             
-            # Resonance quality loss - encourage oscillatory behavior
+            # Resonance quality loss
             res_loss = 0.0
             if t > 0:
-                # Encourage state changes (avoid static solutions)
+                # Encourage dynamic oscillator behavior
                 state_diff = torch.mean((new_states - prev_states) ** 2)
-                res_loss += 0.1 * torch.exp(-state_diff)  # Penalize small changes
+                res_loss += 0.1 * torch.exp(-state_diff)  # Penalize static states
                 
                 # Encourage diverse oscillator behaviors
                 state_cors = torch.corrcoef(torch.stack([new_states, prev_states]))
                 if len(state_cors) > 1:
                     res_loss += 0.1 * torch.mean(torch.abs(state_cors[0, 1:]))
-                
-                # Encourage phase continuity
-                context_diff = torch.mean(context ** 2)
-                res_loss += 0.1 * torch.exp(-context_diff)
             
             # Combined loss
             loss = pred_loss + res_loss
             total_loss += loss.item()
-            n_steps += 1
             
             # Backward pass
             loss.backward()
@@ -214,7 +218,4 @@ class ResonanceNetwork(nn.Module):
         # Update weights
         optimizer.step()
         
-        # Store final states for next training step
-        self.last_states = prev_states
-        
-        return total_loss / n_steps
+        return total_loss / seq_length
