@@ -18,62 +18,109 @@ st.set_page_config(layout="wide")
 
 st.title("Resonance Pattern Generator")
 
-# Initialize session state for generators if not exists
+# Initialize session state
 if 'generators' not in st.session_state:
     st.session_state.generators = []
-    st.session_state.last_params = {}  # Track last parameters
+    st.session_state.n_components = 2
+    st.session_state.seq_length = 100
+    st.session_state.frequencies = [1.0, 2.0]
+    st.session_state.phases = [0.0, 0.0]
 
-# Collect all UI parameters first
-current_params = {}
-
-# Pattern Generator Settings
-st.sidebar.header("Pattern Generator Settings")
-current_params['seq_length'] = st.sidebar.slider("Sequence Length", min_value=10, max_value=1000, value=100)
-current_params['n_components'] = st.sidebar.number_input("Number of Components", min_value=1, max_value=5, value=2)
-
-# Generator controls
-current_params['frequencies'] = []
-current_params['phases'] = []
-with st.sidebar.expander('Components'):
-    for i in range(current_params['n_components']):
-        col1, col2 = st.sidebar.columns(2)
-        with col1:
-            freq = st.number_input(f"Frequency {i+1}", 0.1, 10.0, i + 1.0, key=f"freq_{i}")
-            current_params['frequencies'].append(freq)
-        with col2:
-            phase = st.number_input(f"Phase {i+1}", 0.0, 2*np.pi, 0.0, key=f"phase_{i}")
-            current_params['phases'].append(phase)
-
-# Network settings
-st.sidebar.header("Resonance Network Settings")
-current_params['n_oscillators'] = st.sidebar.slider("Number of Oscillators", min_value=1, max_value=10, value=3)
-current_params['pattern_length'] = st.sidebar.slider("Pattern History Length", min_value=5, max_value=50, value=10)
-current_params['random_seed'] = st.sidebar.number_input("Random Seed", min_value=0, value=42, step=1,
-                                    help="Integer seed value for reproducible results")
-
-# Training settings
-st.sidebar.header("Training Settings")
-current_params['n_epochs'] = st.sidebar.slider("Number of Epochs", min_value=1, max_value=100, value=10)
-current_params['learning_rate'] = st.sidebar.number_input("Learning Rate", min_value=0.0001, max_value=0.1, value=0.01, format="%.4f")
-
-# Check if any parameters changed
-params_changed = (
-    'last_params' not in st.session_state or
-    current_params != st.session_state.last_params
-)
-
-# Create or update generators if parameters changed
-if params_changed:
+# Callback for updating generators
+def update_generators():
     st.session_state.generators = []
-    for i in range(current_params['n_components']):
+    for i in range(st.session_state.n_components):
         st.session_state.generators.append(
-            SineWaveGenerator(current_params['seq_length'], 
-                            current_params['frequencies'][i], 
-                            current_params['phases'][i])
+            SineWaveGenerator(
+                st.session_state.seq_length,
+                st.session_state.frequencies[i],
+                st.session_state.phases[i]
+            )
         )
-    st.session_state.last_params = current_params.copy()
 
-# Generate patterns using persisted generators
+# Callback for number of components change
+def on_n_components_change():
+    n = st.session_state.n_components_input
+    # Update frequencies and phases arrays
+    if n > len(st.session_state.frequencies):
+        # Add new components
+        for i in range(len(st.session_state.frequencies), n):
+            st.session_state.frequencies.append(float(i + 1))
+            st.session_state.phases.append(0.0)
+    else:
+        # Remove extra components
+        st.session_state.frequencies = st.session_state.frequencies[:n]
+        st.session_state.phases = st.session_state.phases[:n]
+    
+    st.session_state.n_components = n
+    update_generators()
+
+# Callback for sequence length change
+def on_seq_length_change():
+    st.session_state.seq_length = st.session_state.seq_length_input
+    update_generators()
+
+# Callback for frequency/phase changes
+def on_param_change(param_type, index):
+    if param_type == 'freq':
+        st.session_state.frequencies[index] = st.session_state[f'freq_{index}']
+    else:  # phase
+        st.session_state.phases[index] = st.session_state[f'phase_{index}']
+    update_generators()
+
+# Sidebar - Pattern Generator Settings (with live updates)
+st.sidebar.header("Pattern Generator Settings")
+
+st.sidebar.number_input("Number of Components", min_value=1, max_value=5, 
+                       value=st.session_state.n_components,
+                       key='n_components_input', 
+                       on_change=on_n_components_change)
+
+st.sidebar.slider("Sequence Length", min_value=10, max_value=1000, 
+                 value=st.session_state.seq_length,
+                 key='seq_length_input', 
+                 on_change=on_seq_length_change)
+
+with st.sidebar.expander('Components (Freq/Phase)', expanded=True):
+    for i in range(st.session_state.n_components):
+        col1, col2, col3 = st.columns([1,2,2])
+        with col1:
+            st.write(i)
+        with col2:
+            st.number_input(f"Frequency {i+1}", 0.1, 10.0,
+                          st.session_state.frequencies[i],
+                          key=f'freq_{i}',
+                          on_change=on_param_change,
+                          label_visibility='collapsed',
+                          args=('freq', i))
+        with col3:
+            st.number_input(f"Phase {i+1}", 0.0, 2*np.pi,
+                          st.session_state.phases[i],
+                          key=f'phase_{i}',
+                          on_change=on_param_change,
+                          label_visibility='collapsed',
+                          args=('phase', i))
+
+# Sidebar form - Network and Training Settings
+with st.sidebar.form("training_settings_form"):
+    st.header("Resonance Network Settings")
+    n_oscillators = st.slider("Number of Oscillators", min_value=1, max_value=10, value=3)
+    pattern_length = st.slider("Pattern History Length", min_value=5, max_value=50, value=10)
+    random_seed = st.number_input("Random Seed", min_value=0, value=42, step=1,
+                                help="Integer seed value for reproducible results")
+
+    st.header("Training Settings")
+    n_epochs = st.slider("Number of Epochs", min_value=1, max_value=100, value=10)
+    learning_rate = st.number_input("Learning Rate", min_value=0.0001, max_value=0.1, 
+                                  value=0.01, format="%.4f")
+
+    # Submit button
+    submitted = st.form_submit_button("Train Network")
+
+# Generate patterns
+if not st.session_state.generators:
+    update_generators()
+
 patterns = [gen.generate() for gen in st.session_state.generators]
 combined_pattern = sum(patterns)
 
@@ -95,15 +142,15 @@ with col1:
     fig = create_component_signals_plot(patterns, frequencies)
     sig_tab2.plotly_chart(fig, use_container_width=True)
 
-if st.sidebar.button("Train Network"):
+if submitted:
     # Initialize network and optimizer
     network = ResonanceNetwork(
         input_size=1,
-        n_oscillators=current_params['n_oscillators'],
-        pattern_length=current_params['pattern_length'],
-        seed=current_params['random_seed']
+        n_oscillators=n_oscillators,
+        pattern_length=pattern_length,
+        seed=random_seed
     )
-    optimizer = optim.Adam(network.parameters(), lr=current_params['learning_rate'])
+    optimizer = optim.Adam(network.parameters(), lr=learning_rate)
     
     # Training progress
     progress_bar = st.progress(0)
@@ -111,17 +158,17 @@ if st.sidebar.button("Train Network"):
     
     # Store oscillator states during training
     states_history = []
-    prev_states = torch.zeros(current_params['n_oscillators'])
+    prev_states = torch.zeros(n_oscillators)
     
     # Training loop
-    for epoch in range(current_params['n_epochs']):
+    for epoch in range(n_epochs):
         loss = network.train_step(combined_pattern, optimizer)
         epoch_losses.append(loss)
-        progress_bar.progress((epoch + 1) / current_params['n_epochs'])
+        progress_bar.progress((epoch + 1) / n_epochs)
     
     # Generate predictions and collect states
     predictions = []
-    prev_states = torch.zeros(current_params['n_oscillators'])
+    prev_states = torch.zeros(n_oscillators)
     
     with torch.no_grad():
         for t in range(len(combined_pattern) - 1):
@@ -137,18 +184,16 @@ if st.sidebar.button("Train Network"):
         'epoch_losses': epoch_losses,
         'predictions': predictions,
         'states_history': states_history,
-        'n_oscillators': current_params['n_oscillators'],
-        'random_seed': current_params['random_seed']
+        'n_oscillators': n_oscillators,
+        'random_seed': random_seed
     }
 
 # Split layout for results
 if st.session_state.training_results is not None:
-
     n_oscillators = st.session_state.training_results['n_oscillators']
     states_history = st.session_state.training_results['states_history']
 
     with col1:
-
         final_loss = st.session_state.training_results['epoch_losses'][-1]
         st.subheader(f"Training Progress (Loss: {final_loss:.5f})")
         fig = create_training_progress_plot(st.session_state.training_results['epoch_losses'])
@@ -166,7 +211,6 @@ if st.session_state.training_results is not None:
         st.plotly_chart(fig, use_container_width=True)
 
     with col2:
-        
         st.subheader("Multi-Oscillator Analysis")
         fig_multi = create_multi_phase_plot(states_history, n_oscillators)
         st.plotly_chart(fig_multi, use_container_width=True)
