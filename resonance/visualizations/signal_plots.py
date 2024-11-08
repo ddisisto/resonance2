@@ -38,7 +38,6 @@ def create_combined_signal_plot(
     ))
     
     fig.update_layout(
-        title="Combined Wave Pattern",
         xaxis_title="Time (radians)" if start_time is not None else "Time Step",
         yaxis_title="Amplitude",
         height=200,
@@ -95,7 +94,6 @@ def create_component_signals_plot(
         ))
         
     fig.update_layout(
-        title="Individual Components",
         xaxis_title="Time (radians)" if start_time is not None else "Time Step",
         yaxis_title="Amplitude",
         height=200,

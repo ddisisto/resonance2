@@ -47,6 +47,7 @@ class SineWaveGenerator(PatternGenerator):
         super().__init__(seq_length)
         self.frequency = frequency
         self.phase = phase
+        self.time_step = 1.0 / seq_length  # Time step normalized to unit time
     
     def generate(self) -> torch.Tensor:
         """Generate a sine wave pattern continuing from last state.
@@ -54,12 +55,13 @@ class SineWaveGenerator(PatternGenerator):
         Returns:
             torch.Tensor: A tensor of shape (seq_length,) containing the sine wave pattern
         """
-        # Generate time points continuing from current_t
+        # Generate evenly spaced time points for one unit of time
         t = torch.linspace(self.current_t, 
-                          self.current_t + 2*np.pi, 
+                          self.current_t + 1.0, 
                           self.seq_length)
         
         # Update current_t for next generation
-        self.current_t += 2*np.pi
+        self.current_t += 1.0
         
-        return torch.sin(self.frequency * t + self.phase)
+        # Generate wave with frequency-adjusted time
+        return torch.sin(2 * np.pi * self.frequency * t + self.phase)
